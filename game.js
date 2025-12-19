@@ -7,7 +7,6 @@ const firebaseConfig = {
     messagingSenderId: "572883486618",
     appId: "1:572883486618:web:f4ded30fa8d55111245c23",
     measurementId: "G-RM8NNZSZH4",
-    // ОБНОВЛЕННЫЙ URL ДЛЯ РЕГИОНА europe-west1
     databaseURL: "https://aemafia-8e83b-default-rtdb.europe-west1.firebasedatabase.app"
 };
 
@@ -24,6 +23,7 @@ let gameInterval = null;
 let timeLeft = 60;
 let currentPhase = 'day';
 let dayNumber = 1;
+let isJoined = false; // Флаг присоединения к лобби
 
 // Элементы DOM
 const lobbyScreen = document.getElementById('lobby');
@@ -56,6 +56,23 @@ const nightOptions = document.getElementById('nightOptions');
 const cancelVote = document.getElementById('cancelVote');
 const cancelNightAction = document.getElementById('cancelNightAction');
 
+// Обновляем интерфейс кнопок
+function updateButtons() {
+    if (isJoined) {
+        joinGameBtn.disabled = true;
+        joinGameBtn.innerHTML = '<i class="fas fa-check"></i> Вы уже в лобби';
+        joinGameBtn.classList.add('btn-success');
+        joinGameBtn.classList.remove('btn-primary');
+        leaveLobbyBtn.disabled = false;
+    } else {
+        joinGameBtn.disabled = false;
+        joinGameBtn.innerHTML = '<i class="fas fa-gamepad"></i> Присоединиться к игре';
+        joinGameBtn.classList.remove('btn-success');
+        joinGameBtn.classList.add('btn-primary');
+        leaveLobbyBtn.disabled = true;
+    }
+}
+
 // Генерация уникального ID игрока
 function generatePlayerId() {
     return 'player_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -69,11 +86,22 @@ joinGameBtn.addEventListener('click', () => {
         return;
     }
     
+    // Проверяем, не присоединился ли уже игрок
+    if (isJoined) {
+        alert('Вы уже присоединились к игре!');
+        return;
+    }
+    
     playerName = name;
     playerId = generatePlayerId();
+    isJoined = true;
+    
+    // Обновляем интерфейс
+    updateButtons();
     
     // Сохраняем имя в localStorage
     localStorage.setItem('aemafia_playerName', name);
+    localStorage.setItem('aemafia_playerId', playerId);
     
     // Проверяем подключение к базе данных
     checkDatabaseConnection();
@@ -82,24 +110,27 @@ joinGameBtn.addEventListener('click', () => {
     database.ref(`lobby/${playerId}`).set({
         name: playerName,
         ready: false,
-        joinedAt: Date.now()
+        joinedAt: Date.now(),
+        isActive: true
     })
     .then(() => {
         console.log('Игрок успешно добавлен в лобби');
+        
+        // Переключаемся на лобби
+        switchToLobby();
+        
+        // Загружаем список игроков
+        loadLobbyPlayers();
+        
+        // Включаем кнопку начала игры для первого игрока
+        checkGameStartButton();
     })
     .catch((error) => {
         console.error('Ошибка при добавлении игрока:', error);
         alert('Ошибка подключения к серверу. Проверьте соединение с интернетом.');
+        isJoined = false;
+        updateButtons();
     });
-    
-    // Переключаемся на лобби
-    switchToLobby();
-    
-    // Загружаем список игроков
-    loadLobbyPlayers();
-    
-    // Включаем кнопку начала игры для первого игрока
-    checkGameStartButton();
 });
 
 // Проверка подключения к базе данных
@@ -143,8 +174,15 @@ function loadLobbyPlayers() {
             const player = players[id];
             const playerElement = document.createElement('div');
             playerElement.className = 'player-item';
+            
+            // Помечаем текущего игрока
+            const isCurrentPlayer = id === playerId;
+            
             playerElement.innerHTML = `
-                <div class="player-avatar">${player.name.charAt(0).toUpperCase()}</div>
+                <div class="player-avatar" style="${isCurrentPlayer ? 'background: linear-gradient(135deg, #00b894, #00adb5);' : ''}">
+                    ${player.name.charAt(0).toUpperCase()}
+                    ${isCurrentPlayer ? '<div class="you-badge">Вы</div>' : ''}
+                </div>
                 <div class="player-name">${player.name}</div>
             `;
             playersList.appendChild(playerElement);
@@ -171,6 +209,11 @@ function checkGameStartButton() {
 
 // Начало игры
 startGameBtn.addEventListener('click', () => {
+    if (!isJoined) {
+        alert('Вы не присоединены к лобби!');
+        return;
+    }
+    
     database.ref('lobby').once('value', (snapshot) => {
         const players = snapshot.val() || {};
         const playerIds = Object.keys(players);
@@ -311,7 +354,15 @@ function startGameLoop() {
     // Слушаем изменения состояния игры
     database.ref('game').on('value', (snapshot) => {
         const newGameState = snapshot.val();
-        if (!newGameState) return;
+        if (!newGameState) {
+            // Игра закончилась или была удалена
+            console.log('Игра завершена, возвращаемся в лобби');
+            switchToLobby();
+            isJoined = false;
+            updateButtons();
+            clearInterval(gameInterval);
+            return;
+        }
         
         gameState = newGameState;
         currentPhase = gameState.phase;
@@ -394,9 +445,13 @@ function updatePlayersList() {
         
         // Показываем роль только если игрок мёртв или это сам игрок
         const showRole = !player.alive || id === playerId;
+        const isCurrentPlayer = id === playerId;
         
         playerElement.innerHTML = `
-            <div class="player-avatar-large">${player.name.charAt(0).toUpperCase()}</div>
+            <div class="player-avatar-large" style="${isCurrentPlayer ? 'background: linear-gradient(135deg, #00b894, #00adb5);' : ''}">
+                ${player.name.charAt(0).toUpperCase()}
+                ${isCurrentPlayer ? '<div class="you-badge">Вы</div>' : ''}
+            </div>
             <div class="player-name">${player.name}</div>
             ${showRole ? `<div class="player-role">${getRoleName(player.role)}</div>` : ''}
             ${player.voted ? '<div class="vote-indicator">✓</div>' : ''}
@@ -658,17 +713,24 @@ function endGame(message) {
         switchToLobby();
         playerRole = '';
         updatePlayerRole();
+        isJoined = false;
+        updateButtons();
     }, 30000);
 }
 
 // Покидание лобби
 leaveLobbyBtn.addEventListener('click', () => {
-    if (playerId) {
-        database.ref(`lobby/${playerId}`).remove();
+    if (playerId && isJoined) {
+        database.ref(`lobby/${playerId}`).remove()
+        .then(() => {
+            playerId = null;
+            playerName = '';
+            isJoined = false;
+            playerNameInput.value = '';
+            updateButtons();
+            localStorage.removeItem('aemafia_playerId');
+        });
     }
-    playerId = null;
-    playerName = '';
-    playerNameInput.value = '';
 });
 
 // Покидание игры
@@ -688,17 +750,24 @@ leaveGameBtn.addEventListener('click', () => {
         switchToLobby();
         playerRole = '';
         updatePlayerRole();
+        isJoined = false;
+        updateButtons();
     }
 });
 
 // Инициализация при загрузке
 window.addEventListener('load', () => {
-    // Восстанавливаем имя из localStorage
+    // Восстанавливаем данные из localStorage
     const savedName = localStorage.getItem('aemafia_playerName');
+    const savedPlayerId = localStorage.getItem('aemafia_playerId');
+    
     if (savedName) {
         playerNameInput.value = savedName;
         playerName = savedName;
     }
+    
+    // Обновляем кнопки
+    updateButtons();
     
     // Проверяем, есть ли активная игра
     database.ref('game').once('value', (snapshot) => {
@@ -706,27 +775,58 @@ window.addEventListener('load', () => {
             // Если есть активная игра, присоединяемся к ней
             gameState = snapshot.val();
             
-            // Находим свою роль по имени игрока
+            // Находим свою роль по сохраненному ID
+            if (gameState.players && savedPlayerId && gameState.players[savedPlayerId]) {
+                playerId = savedPlayerId;
+                playerRole = gameState.players[savedPlayerId].role;
+                console.log(`Восстановлена роль: ${playerRole} для игрока ${playerName}`);
+                
+                isJoined = true;
+                updateButtons();
+                switchToGame();
+                startGameLoop();
+                return;
+            }
+            
+            // Если не нашли по ID, ищем по имени
             if (gameState.players && playerName) {
                 Object.entries(gameState.players).forEach(([id, player]) => {
                     if (player.name === playerName) {
                         playerId = id;
                         playerRole = player.role;
-                        console.log(`Восстановлена роль: ${playerRole} для игрока ${playerName}`);
+                        console.log(`Восстановлена роль по имени: ${playerRole} для игрока ${playerName}`);
+                        
+                        isJoined = true;
+                        updateButtons();
+                        switchToGame();
+                        startGameLoop();
                     }
                 });
-                
-                if (playerRole) {
-                    switchToGame();
-                    startGameLoop();
-                    return;
-                }
             }
         }
         
-        // Иначе показываем лобби
-        switchToLobby();
-        loadLobbyPlayers();
+        // Проверяем, есть ли лобби и наш игрок в нем
+        if (savedPlayerId) {
+            database.ref(`lobby/${savedPlayerId}`).once('value', (snapshot) => {
+                if (snapshot.exists()) {
+                    const playerData = snapshot.val();
+                    if (playerData && playerData.isActive) {
+                        playerId = savedPlayerId;
+                        isJoined = true;
+                        updateButtons();
+                        console.log('Восстановлено присоединение к лобби');
+                    }
+                }
+                
+                // В любом случае показываем лобби
+                switchToLobby();
+                loadLobbyPlayers();
+            });
+        } else {
+            // Иначе показываем лобби
+            switchToLobby();
+            loadLobbyPlayers();
+        }
     })
     .catch((error) => {
         console.error('Ошибка при проверке активной игры:', error);
@@ -737,7 +837,7 @@ window.addEventListener('load', () => {
 
 // Предотвращение закрытия страницы
 window.addEventListener('beforeunload', (e) => {
-    if (playerId && database) {
+    if (playerId && database && isJoined) {
         // Удаляем игрока при закрытии страницы
         database.ref(`lobby/${playerId}`).remove();
         if (gameState.players && gameState.players[playerId]) {
