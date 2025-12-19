@@ -7,7 +7,8 @@ const firebaseConfig = {
     messagingSenderId: "572883486618",
     appId: "1:572883486618:web:f4ded30fa8d55111245c23",
     measurementId: "G-RM8NNZSZH4",
-    databaseURL: "https://aemafia-8e83b-default-rtdb.firebaseio.com/"
+    // ОБНОВЛЕННЫЙ URL ДЛЯ РЕГИОНА europe-west1
+    databaseURL: "https://aemafia-8e83b-default-rtdb.europe-west1.firebasedatabase.app"
 };
 
 // Инициализация Firebase
@@ -71,11 +72,24 @@ joinGameBtn.addEventListener('click', () => {
     playerName = name;
     playerId = generatePlayerId();
     
+    // Сохраняем имя в localStorage
+    localStorage.setItem('aemafia_playerName', name);
+    
+    // Проверяем подключение к базе данных
+    checkDatabaseConnection();
+    
     // Сохраняем игрока в Firebase
     database.ref(`lobby/${playerId}`).set({
         name: playerName,
         ready: false,
         joinedAt: Date.now()
+    })
+    .then(() => {
+        console.log('Игрок успешно добавлен в лобби');
+    })
+    .catch((error) => {
+        console.error('Ошибка при добавлении игрока:', error);
+        alert('Ошибка подключения к серверу. Проверьте соединение с интернетом.');
     });
     
     // Переключаемся на лобби
@@ -87,6 +101,15 @@ joinGameBtn.addEventListener('click', () => {
     // Включаем кнопку начала игры для первого игрока
     checkGameStartButton();
 });
+
+// Проверка подключения к базе данных
+function checkDatabaseConnection() {
+    const testRef = database.ref('.info/connected');
+    testRef.on('value', (snapshot) => {
+        const connected = snapshot.val();
+        console.log('Подключение к Firebase:', connected ? 'есть' : 'нет');
+    });
+}
 
 // Переключение на лобби
 function switchToLobby() {
@@ -196,19 +219,26 @@ function initializeGame(playerIds, players) {
     });
     
     // Сохраняем состояние игры в Firebase
-    database.ref('game').set(gameState);
-    
-    // Удаляем лобби
-    database.ref('lobby').remove();
-    
-    // Переключаемся на игровой экран
-    switchToGame();
-    
-    // Начинаем игровой цикл
-    startGameLoop();
-    
-    // Отправляем системное сообщение
-    addSystemMessage('Игра началась! Ночь 1. Мафия, проснитесь!');
+    database.ref('game').set(gameState)
+    .then(() => {
+        console.log('Игра успешно инициализирована');
+        
+        // Удаляем лобби
+        database.ref('lobby').remove();
+        
+        // Переключаемся на игровой экран
+        switchToGame();
+        
+        // Начинаем игровой цикл
+        startGameLoop();
+        
+        // Отправляем системное сообщение
+        addSystemMessage('Игра началась! Ночь 1. Мафия, проснитесь!');
+    })
+    .catch((error) => {
+        console.error('Ошибка при инициализации игры:', error);
+        alert('Ошибка при создании игры. Попробуйте еще раз.');
+    });
 }
 
 // Распределение ролей
@@ -336,7 +366,7 @@ function updateGameUI() {
     sendMessageBtn.disabled = chatInput.disabled;
     
     // Обновляем статус игрока
-    if (gameState.players[playerId]) {
+    if (gameState.players && gameState.players[playerId]) {
         const isAlive = gameState.players[playerId].alive;
         playerStatus.textContent = isAlive ? 'Жив' : 'Мёртв';
         playerStatus.className = isAlive ? 'status-alive' : 'status-dead';
@@ -401,8 +431,10 @@ function endPhase() {
         
         // Устраняем игрока
         if (eliminatedPlayerId) {
-            database.ref(`game/players/${eliminatedPlayerId}/alive`).set(false);
-            addSystemMessage(`${gameState.players[eliminatedPlayerId].name} был изгнан городом!`);
+            database.ref(`game/players/${eliminatedPlayerId}/alive`).set(false)
+            .then(() => {
+                addSystemMessage(`${gameState.players[eliminatedPlayerId].name} был изгнан городом!`);
+            });
         }
         
         // Переходим к ночи
@@ -425,8 +457,10 @@ function endPhase() {
         
         if (nightActions.mafia) {
             const targetId = nightActions.mafia;
-            database.ref(`game/players/${targetId}/alive`).set(false);
-            addSystemMessage(`${gameState.players[targetId].name} был убит мафией ночью!`);
+            database.ref(`game/players/${targetId}/alive`).set(false)
+            .then(() => {
+                addSystemMessage(`${gameState.players[targetId].name} был убит мафией ночью!`);
+            });
         }
         
         // Переходим ко дню
@@ -542,9 +576,13 @@ function sendMessage() {
         timestamp: Date.now(),
         phase: currentPhase,
         day: dayNumber
+    })
+    .then(() => {
+        chatInput.value = '';
+    })
+    .catch((error) => {
+        console.error('Ошибка при отправке сообщения:', error);
     });
-    
-    chatInput.value = '';
 }
 
 // Загрузка чата
@@ -655,6 +693,13 @@ leaveGameBtn.addEventListener('click', () => {
 
 // Инициализация при загрузке
 window.addEventListener('load', () => {
+    // Восстанавливаем имя из localStorage
+    const savedName = localStorage.getItem('aemafia_playerName');
+    if (savedName) {
+        playerNameInput.value = savedName;
+        playerName = savedName;
+    }
+    
     // Проверяем, есть ли активная игра
     database.ref('game').once('value', (snapshot) => {
         if (snapshot.exists()) {
@@ -662,25 +707,19 @@ window.addEventListener('load', () => {
             gameState = snapshot.val();
             
             // Находим свою роль по имени игрока
-            if (gameState.players) {
-                const playerNameFromStorage = localStorage.getItem('aemafia_playerName');
-                if (playerNameFromStorage) {
-                    playerName = playerNameFromStorage;
-                    playerNameInput.value = playerName;
-                    
-                    // Ищем игрока с таким именем
-                    Object.entries(gameState.players).forEach(([id, player]) => {
-                        if (player.name === playerName) {
-                            playerId = id;
-                            playerRole = player.role;
-                        }
-                    });
-                    
-                    if (playerRole) {
-                        switchToGame();
-                        startGameLoop();
-                        return;
+            if (gameState.players && playerName) {
+                Object.entries(gameState.players).forEach(([id, player]) => {
+                    if (player.name === playerName) {
+                        playerId = id;
+                        playerRole = player.role;
+                        console.log(`Восстановлена роль: ${playerRole} для игрока ${playerName}`);
                     }
+                });
+                
+                if (playerRole) {
+                    switchToGame();
+                    startGameLoop();
+                    return;
                 }
             }
         }
@@ -688,32 +727,21 @@ window.addEventListener('load', () => {
         // Иначе показываем лобби
         switchToLobby();
         loadLobbyPlayers();
-        
-        // Восстанавливаем имя из localStorage
-        const savedName = localStorage.getItem('aemafia_playerName');
-        if (savedName) {
-            playerNameInput.value = savedName;
-        }
+    })
+    .catch((error) => {
+        console.error('Ошибка при проверке активной игры:', error);
+        switchToLobby();
+        loadLobbyPlayers();
     });
-});
-
-// Сохраняем имя игрока
-joinGameBtn.addEventListener('click', () => {
-    const name = playerNameInput.value.trim();
-    if (name) {
-        localStorage.setItem('aemafia_playerName', name);
-    }
 });
 
 // Предотвращение закрытия страницы
 window.addEventListener('beforeunload', (e) => {
-    if (playerId) {
+    if (playerId && database) {
         // Удаляем игрока при закрытии страницы
-        if (database) {
-            database.ref(`lobby/${playerId}`).remove();
-            if (gameState.players && gameState.players[playerId]) {
-                database.ref(`game/players/${playerId}/alive`).set(false);
-            }
+        database.ref(`lobby/${playerId}`).remove();
+        if (gameState.players && gameState.players[playerId]) {
+            database.ref(`game/players/${playerId}/alive`).set(false);
         }
     }
 });
