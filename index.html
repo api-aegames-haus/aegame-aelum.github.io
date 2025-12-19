@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AeMafia - Мафия онлайн</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Firebase compat SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Лобби -->
+        <div id="lobby" class="screen active">
+            <div class="header">
+                <h1><i class="fas fa-user-secret"></i> AeMafia</h1>
+                <p class="subtitle">Онлайн игра в Мафию</p>
+            </div>
+            
+            <div class="card">
+                <h2><i class="fas fa-door-open"></i> Вход в игру</h2>
+                <div class="form-group">
+                    <label for="playerName">Ваше имя:</label>
+                    <input type="text" id="playerName" placeholder="Введите ваше имя" maxlength="20">
+                </div>
+                <button id="joinGame" class="btn-primary">
+                    <i class="fas fa-gamepad"></i> Присоединиться к игре
+                </button>
+                
+                <div class="info-box">
+                    <h3><i class="fas fa-info-circle"></i> Правила игры:</h3>
+                    <ul>
+                        <li>Минимум 4 игрока для начала игры</li>
+                        <li>Игроки делятся на мирных жителей и мафию</li>
+                        <li>Ночь: мафия выбирает жертву</li>
+                        <li>День: все игроки обсуждают и голосуют</li>
+                        <li>Цель мафии: устранить всех мирных жителей</li>
+                        <li>Цель мирных: выявить всю мафию</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2><i class="fas fa-users"></i> Игроки в лобби (<span id="playerCount">0</span>)</h2>
+                <div id="playersList" class="players-list">
+                    <p class="empty">Игроков пока нет. Будьте первым!</p>
+                </div>
+                
+                <div class="controls">
+                    <button id="startGame" class="btn-success" disabled>
+                        <i class="fas fa-play"></i> Начать игру (минимум 4 игрока)
+                    </button>
+                    <button id="leaveLobby" class="btn-danger">
+                        <i class="fas fa-sign-out-alt"></i> Покинуть лобби
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Игровой экран -->
+        <div id="gameScreen" class="screen">
+            <div class="game-header">
+                <h1><i class="fas fa-user-secret"></i> AeMafia</h1>
+                <div class="game-info">
+                    <div class="phase" id="gamePhase">День 1</div>
+                    <div class="timer" id="gameTimer">01:00</div>
+                </div>
+            </div>
+            
+            <div class="game-content">
+                <div class="card game-card">
+                    <h2 id="phaseTitle">Дневное обсуждение</h2>
+                    <div id="phaseDescription" class="phase-description">
+                        Обсудите, кто может быть мафией и проголосуйте за подозрительного игрока.
+                    </div>
+                    
+                    <div class="chat-section">
+                        <div class="chat-messages" id="chatMessages">
+                            <div class="system-message">
+                                <strong>Система:</strong> Игра началась! Добро пожаловать в AeMafia!
+                            </div>
+                        </div>
+                        <div class="chat-input">
+                            <input type="text" id="chatInput" placeholder="Введите сообщение..." disabled>
+                            <button id="sendMessage" class="btn-primary" disabled>
+                                <i class="fas fa-paper-plane"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card game-card">
+                    <h2>Игроки (<span id="aliveCount">0</span> живых)</h2>
+                    <div id="gamePlayers" class="players-grid">
+                        <!-- Игроки будут здесь -->
+                    </div>
+                    
+                    <div class="actions">
+                        <button id="voteButton" class="btn-primary" disabled>
+                            <i class="fas fa-vote-yea"></i> Проголосовать
+                        </button>
+                        <button id="nightAction" class="btn-night" disabled>
+                            <i class="fas fa-moon"></i> Ночное действие
+                        </button>
+                        <button id="leaveGame" class="btn-danger">
+                            <i class="fas fa-sign-out-alt"></i> Покинуть игру
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card game-card player-info">
+                <h2>Ваша роль: <span id="playerRole">Не назначена</span></h2>
+                <div id="roleDescription" class="role-description">
+                    Ожидание начала игры...
+                </div>
+                <div class="status">
+                    Статус: <span id="playerStatus" class="status-alive">Жив</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Модальное окно голосования -->
+        <div id="voteModal" class="modal">
+            <div class="modal-content">
+                <h2><i class="fas fa-vote-yea"></i> Голосование</h2>
+                <p>Выберите игрока, за которого хотите проголосовать:</p>
+                <div id="voteOptions" class="vote-options">
+                    <!-- Опции голосования будут здесь -->
+                </div>
+                <div class="modal-actions">
+                    <button id="cancelVote" class="btn-secondary">Отмена</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Модальное окно ночного действия -->
+        <div id="nightModal" class="modal">
+            <div class="modal-content">
+                <h2><i class="fas fa-moon"></i> Ночное действие</h2>
+                <p id="nightActionDescription">Выберите игрока для вашего ночного действия:</p>
+                <div id="nightOptions" class="vote-options">
+                    <!-- Опции ночного действия будут здесь -->
+                </div>
+                <div class="modal-actions">
+                    <button id="cancelNightAction" class="btn-secondary">Отмена</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
