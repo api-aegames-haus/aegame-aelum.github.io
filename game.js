@@ -2,7 +2,7 @@
 const firebaseConfig = {
     apiKey: "AIzaSyBzQ4QeB6gI4q8w4Q9bQ8W7r6JkLmNpOqRs",
     projectId: "aemafia-game",
-    databaseURL: "https://aemafia-game-default-rtdb.firebaseio.com/",
+    databaseURL: "https://aemafia-8e83b-default-rtdb.europe-west1.firebasedatabase.app",
     appId: "1:123456789012:web:abcdef123456"
 };
 
